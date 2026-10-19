@@ -1,0 +1,501 @@
+local player = game.Players.LocalPlayer
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+-- ===== ตรวจสอบแมพ =====
+local aChassis = player.PlayerGui:FindFirstChild("A-Chassis Interface")
+local isPoliceMap = (aChassis ~= nil)
+
+if not isPoliceMap then
+	task.delay(3, function()
+		aChassis = player.PlayerGui:FindFirstChild("A-Chassis Interface")
+		isPoliceMap = (aChassis ~= nil)
+	end)
+end
+
+player.PlayerGui.ChildAdded:Connect(function(child)
+	if child.Name == "A-Chassis Interface" then
+		aChassis = child
+		isPoliceMap = true
+	end
+end)
+
+-- ===== GUI หลัก =====
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.Name = "SpeedGui"
+gui.ResetOnSpawn = false
+
+local hideBtn = Instance.new("TextButton", gui)
+hideBtn.Name = "HideBtn"
+hideBtn.Size = UDim2.new(0, 40, 0, 40)
+hideBtn.Position = UDim2.new(0.05, 0, 0.3, -45)
+hideBtn.Text = "⚡"
+hideBtn.TextSize = 20
+hideBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+hideBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", hideBtn).CornerRadius = UDim.new(0, 8)
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 240, 0, 215)
+frame.Position = UDim2.new(0.05, 0, 0.3, 0)
+frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+frame.Active = true
+Instance.new("UICorner", frame)
+
+local lockBtn = Instance.new("TextButton", frame)
+lockBtn.Name = "LockBtn"
+lockBtn.Size = UDim2.new(0, 28, 0, 28)
+lockBtn.Position = UDim2.new(1, -32, 0, 4)
+lockBtn.Text = "🔓"
+lockBtn.TextSize = 14
+lockBtn.BackgroundTransparency = 1
+lockBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+
+-- ช่องใส่ความเร็วเดินหน้า
+local input = Instance.new("TextBox", frame)
+input.Size = UDim2.new(1, -20, 0, 30)
+input.Position = UDim2.new(0, 10, 0, 10)
+input.PlaceholderText = "ความเร็วสูงสุด (2000)"
+input.Text = ""
+input.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+input.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", input)
+
+-- ปุ่มโหมด
+local modeBtn = Instance.new("TextButton", frame)
+modeBtn.Size = UDim2.new(0, 70, 0, 26)
+modeBtn.Position = UDim2.new(0, 10, 0, 48)
+modeBtn.Text = "ปกติ"
+modeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+modeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", modeBtn)
+
+local boostBtn = Instance.new("TextButton", frame)
+boostBtn.Size = UDim2.new(0, 80, 0, 26)
+boostBtn.Position = UDim2.new(0, 85, 0, 48)
+boostBtn.Text = "บูสต์: ปิด"
+boostBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+boostBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", boostBtn)
+
+local toggleBtn = Instance.new("TextButton", frame)
+toggleBtn.Size = UDim2.new(0, 65, 0, 26)
+toggleBtn.Position = UDim2.new(0, 170, 0, 48)
+toggleBtn.Text = "ปิด"
+toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", toggleBtn)
+
+local brakeBtn = Instance.new("TextButton", frame)
+brakeBtn.Size = UDim2.new(1, -20, 0, 26)
+brakeBtn.Position = UDim2.new(0, 10, 0, 80)
+brakeBtn.Text = "เบรก (กดค้าง)"
+brakeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+brakeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", brakeBtn)
+
+local startBtn = Instance.new("TextButton", frame)
+startBtn.Name = "StartBtn"
+startBtn.Size = UDim2.new(1, -20, 0, 30)
+startBtn.Position = UDim2.new(0, 10, 0, 112)
+startBtn.Text = "🏁 START (!START)"
+startBtn.TextSize = 14
+startBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+startBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", startBtn).CornerRadius = UDim.new(0, 6)
+
+local status = Instance.new("TextLabel", frame)
+status.Size = UDim2.new(1, -20, 0, 20)
+status.Position = UDim2.new(0, 10, 0, 148)
+status.Text = "ปิด"
+status.TextColor3 = Color3.fromRGB(180, 180, 180)
+status.BackgroundTransparency = 1
+status.TextXAlignment = Enum.TextXAlignment.Left
+
+local hint = Instance.new("TextLabel", frame)
+hint.Size = UDim2.new(1, -20, 0, 15)
+hint.Position = UDim2.new(0, 10, 0, 171)
+hint.Text = "ถอยหลังคงที่ 50 | บูสต์ = อัตราเร่งไวขึ้น"
+hint.TextColor3 = Color3.fromRGB(100, 100, 100)
+hint.BackgroundTransparency = 1
+hint.TextXAlignment = Enum.TextXAlignment.Left
+hint.TextSize = 10
+
+-- ===== ระบบล็อก / ซ่อน / ลาก =====
+local locked = false
+lockBtn.MouseButton1Click:Connect(function()
+	locked = not locked
+	lockBtn.Text = locked and "🔒" or "🔓"
+	lockBtn.TextColor3 = locked and Color3.fromRGB(60, 200, 60) or Color3.fromRGB(180, 180, 180)
+end)
+
+local uiVisible = true
+hideBtn.MouseButton1Click:Connect(function()
+	uiVisible = not uiVisible
+	frame.Visible = uiVisible
+	hideBtn.Text = uiVisible and "⚡" or "❌"
+	hideBtn.BackgroundColor3 = uiVisible and Color3.fromRGB(40, 40, 40) or Color3.fromRGB(80, 30, 30)
+end)
+
+local dragging, dragStart, startPos
+frame.InputBegan:Connect(function(i)
+	if locked then return end
+	if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = i.Position
+		startPos = frame.Position
+	end
+end)
+UIS.InputChanged:Connect(function(i)
+	if not dragging or locked then return end
+	if i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch then
+		local delta = i.Position - dragStart
+		frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		hideBtn.Position = UDim2.new(frame.Position.X.Scale, frame.Position.X.Offset, frame.Position.Y.Scale, frame.Position.Y.Offset - 45)
+	end
+end)
+UIS.InputEnded:Connect(function()
+	dragging = false
+end)
+
+-- ===== ฟังก์ชันหาค่า =====
+local function getValuesDrag()
+	local interface = player.PlayerGui:FindFirstChild("Interface")
+	return interface and interface:FindFirstChild("Values")
+end
+
+local function getValues()
+	if isPoliceMap and aChassis then
+		return aChassis:FindFirstChild("Values")
+	else
+		return getValuesDrag()
+	end
+end
+
+local function getVehiclePolice()
+	if not aChassis then return nil end
+	local carValue = aChassis:FindFirstChild("Car")
+	if carValue and carValue.Value then
+		local driveSeat = carValue.Value:FindFirstChild("DriveSeat")
+		if driveSeat then return driveSeat end
+	end
+	local char = player.Character
+	if char then
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if hum and hum.SeatPart then return hum.SeatPart end
+	end
+	return nil
+end
+
+local function getVehicleDrag()
+	local interface = player.PlayerGui:FindFirstChild("Interface")
+	if interface then
+		local bike = interface:FindFirstChild("Bike")
+		if bike and bike.Value then
+			local seat = bike.Value:FindFirstChild("DriveSeat")
+			if seat then return seat end
+		end
+	end
+	local char = player.Character
+	if char then
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if hum and hum.SeatPart then return hum.SeatPart end
+	end
+	return nil
+end
+
+local function getVehicle()
+	if isPoliceMap then
+		return getVehiclePolice()
+	else
+		return getVehicleDrag()
+	end
+end
+
+local function getThrottle()
+	local values = getValues()
+	if values and values:FindFirstChild("Throttle") then
+		return values.Throttle.Value
+	end
+	return 0
+end
+
+local function getBrake()
+	local values = getValues()
+	if not values then return 0 end
+	if isPoliceMap then
+		if values:FindFirstChild("Brake") then
+			return values.Brake.Value
+		end
+	else
+		local brakeNames = {"Brake", "BrakePedal", "Braking", "IsBraking", "HandBrake", "FootBrake"}
+		for _, name in ipairs(brakeNames) do
+			local obj = values:FindFirstChild(name)
+			if obj then return obj.Value end
+		end
+	end
+	return 0
+end
+
+-- ===== ตรวจสอบเกีย รองรับทุกระบบ =====
+local function getGear()
+	local values = getValues()
+	if not values then return nil end
+	local gearNames = {"Gear", "CurrentGear", "GearNum", "TransmissionGear"}
+	for _, name in ipairs(gearNames) do
+		local obj = values:FindFirstChild(name)
+		if obj then return obj.Value end
+	end
+	return nil
+end
+
+local function isReversing()
+	local rawThrottle = getThrottle()
+	
+	-- เกียออโต้: Throttle ติดลบ = ถอยหลัง
+	if rawThrottle < -0.05 then
+		return true
+	end
+	
+	-- เกียธรรมดา: เช็คค่า Gear เป็น R
+	local gear = getGear()
+	if gear then
+		local g = tostring(gear):upper()
+		if g == "R" or g == "REVERSE" or g == "REV" then
+			return true
+		end
+		if tonumber(gear) == -1 then
+			return true
+		end
+	end
+	
+	return false
+end
+
+local function getSpeed(seat)
+	local values = getValues()
+	if values then
+		if isPoliceMap then
+			if values:FindFirstChild("Velocity") then
+				local vel = values.Velocity.Value
+				local dir = seat.CFrame.LookVector
+				return vel:Dot(dir) * 0.9144
+			end
+		else
+			local speedNames = {"Speed", "KMH", "KM", "CurrentSpeed", "RealSpeed", "VehicleSpeed"}
+			for _, name in ipairs(speedNames) do
+				local obj = values:FindFirstChild(name)
+				if obj and obj:IsA("ValueBase") then
+					return obj.Value
+				end
+			end
+		end
+	end
+	if seat then
+		local dir = seat.CFrame.LookVector
+		local vel = seat.AssemblyLinearVelocity
+		return vel:Dot(dir)
+	end
+	return 0
+end
+
+-- ===== ตัวแปรสถานะ =====
+local enabled = false
+local brakeHeld = false
+local raceMode = false
+local boostMode = false
+local currentThrottle = 0
+
+toggleBtn.MouseButton1Click:Connect(function()
+	enabled = not enabled
+	toggleBtn.Text = enabled and "เปิด" or "ปิด"
+	toggleBtn.BackgroundColor3 = enabled and Color3.fromRGB(60, 200, 60) or Color3.fromRGB(200, 60, 60)
+end)
+
+modeBtn.MouseButton1Click:Connect(function()
+	raceMode = not raceMode
+	modeBtn.Text = raceMode and "แข่ง" or "ปกติ"
+end)
+
+boostBtn.MouseButton1Click:Connect(function()
+	boostMode = not boostMode
+	boostBtn.Text = boostMode and "บูสต์: เปิด" or "บูสต์: ปิด"
+	boostBtn.BackgroundColor3 = boostMode and Color3.fromRGB(255, 160, 40) or Color3.fromRGB(80, 80, 80)
+end)
+
+brakeBtn.MouseButton1Down:Connect(function()
+	brakeHeld = true
+	brakeBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+	brakeBtn.Text = "เบรกอยู่..."
+end)
+brakeBtn.MouseButton1Up:Connect(function()
+	brakeHeld = false
+	brakeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+	brakeBtn.Text = "เบรก (กดค้าง)"
+end)
+brakeBtn.MouseLeave:Connect(function()
+	brakeHeld = false
+	brakeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+	brakeBtn.Text = "เบรก (กดค้าง)"
+end)
+
+-- ===== ปุ่ม !START =====
+startBtn.MouseButton1Click:Connect(function()
+	local success = false
+	local chatEvents = game.ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+	if chatEvents then
+		local sayMsg = chatEvents:FindFirstChild("SayMessageRequest")
+		if sayMsg then
+			sayMsg:FireServer("!START", "All")
+			success = true
+		end
+	end
+	if not success then
+		pcall(function()
+			local textChatService = game:GetService("TextChatService")
+			local general = textChatService.TextChannels:FindFirstChild("RBXGeneral")
+			if general then
+				general:SendAsync("!START")
+				success = true
+			end
+		end)
+	end
+	if not success then
+		pcall(function()
+			local remote = game.ReplicatedStorage:FindFirstChild("ChatRemote") 
+				or game.ReplicatedStorage:FindFirstChild("SendMessage")
+				or game.ReplicatedStorage:FindFirstChild("Chat")
+			if remote and remote:IsA("RemoteEvent") then
+				remote:FireServer("!START")
+				success = true
+			end
+		end)
+	end
+	if success then
+		startBtn.Text = "✅ ส่งแล้ว!"
+		startBtn.BackgroundColor3 = Color3.fromRGB(60, 200, 60)
+		task.delay(1.2, function()
+			startBtn.Text = "🏁 START (!START)"
+			startBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+		end)
+	else
+		startBtn.Text = "❌ ไม่สำเร็จ"
+		startBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+		task.delay(1.2, function()
+			startBtn.Text = "🏁 START (!START)"
+			startBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+		end)
+	end
+end)
+
+-- ===== ลูปหลัก ถอยหลังคงที่ 50 | เดินหน้าสูงสุด 2000 =====
+RunService.RenderStepped:Connect(function(dt)
+	if not enabled then
+		status.Text = "ปิด"
+		currentThrottle = 0
+		return
+	end
+
+	local rawThrottle = getThrottle()
+	if math.abs(rawThrottle) < 0.08 then
+		status.Text = "รอคันเร่ง..."
+		currentThrottle = 0
+		return
+	end
+
+	local brake = getBrake()
+	local seat = getVehicle()
+	if not seat then
+		status.Text = "ไม่มีพาหนะ"
+		currentThrottle = 0
+		return
+	end
+
+	local reversing = isReversing()
+	local dir = seat.CFrame.LookVector
+	local vel = seat.AssemblyLinearVelocity
+	local currentSpeed = getSpeed(seat)
+	local absSpeed = math.abs(currentSpeed)
+	
+	-- ถอยหลัง = 50, เดินหน้า = ใส่เอง (สูงสุด 2000)
+	local target
+	if reversing then
+		target = 50
+	else
+		target = tonumber(input.Text)
+		if not target then
+			status.Text = "ใส่ความเร็วก่อน"
+			currentThrottle = 0
+			return
+		end
+		if target > 2000 then target = 2000 end
+	end
+	if target < 0 then target = 0 end
+
+	local moveDir = reversing and -dir or dir
+
+	local baseResponse = raceMode and 0.18 or 0.06
+	local baseMaxAdd = raceMode and 4 or 1.5
+	local rampUp = raceMode and 0.10 or 0.03
+	local rampDown = 0.15
+
+	local response = baseResponse
+	local maxAdd = baseMaxAdd
+	if boostMode then
+		response = response * 5.0
+		maxAdd = maxAdd * 3.5
+		rampUp = rampUp * 2.0
+	end
+
+	-- [แก้ไข] ถอยหลังช้าลงมาก
+	if reversing then
+		response = response * 2.5   -- อัตราเร่งเหลือ 15% (ช้ากว่า ~6-7 เท่า)
+		maxAdd = maxAdd * 0.25       -- เพิ่มความเร็วต่อเฟรมน้อยลง
+		rampUp = rampUp * 0.3        -- คันเร่งขึ้นช้าลง
+	end
+
+	local absThrottle = math.abs(rawThrottle)
+	if currentThrottle < absThrottle then
+		currentThrottle = math.min(absThrottle, currentThrottle + rampUp)
+	elseif currentThrottle > absThrottle then
+		currentThrottle = math.max(absThrottle, currentThrottle - rampDown)
+	end
+
+	local isBraking = (brake > 0.05) or brakeHeld
+
+	if isBraking and absSpeed > 0.5 then
+		local decelRate = 40
+		local decel = decelRate * dt
+		local newAbsSpeed = math.max(0, absSpeed - decel)
+		if newAbsSpeed < 0.5 then newAbsSpeed = 0 end
+		
+		local longitudinalVel = dir * currentSpeed
+		local lateralVel = vel - longitudinalVel
+		seat.AssemblyLinearVelocity = (dir * (currentSpeed >= 0 and newAbsSpeed or -newAbsSpeed)) + lateralVel
+		
+		status.Text = "เบรก " .. math.floor(absSpeed) .. " กม/ชม"
+		
+	elseif currentThrottle > 0.08 then
+		local atTarget = false
+		if reversing then
+			atTarget = currentSpeed <= -target
+		else
+			atTarget = currentSpeed >= target
+		end
+		
+		if not atTarget then
+			local diff = target - absSpeed
+			local add = diff * response * currentThrottle
+			add = math.min(add, maxAdd)
+			
+			seat.AssemblyLinearVelocity = vel + moveDir * add
+			status.Text = math.floor(absSpeed) .. "/" .. target .. " กม/ชม" .. (reversing and " ↩" or " ➡")
+		else
+			local pull = (absSpeed - target) * 0.08
+			seat.AssemblyLinearVelocity = vel - moveDir * pull
+			status.Text = "จำกัด " .. math.floor(absSpeed) .. " กม/ชม" .. (reversing and " ↩" or " ➡")
+		end
+	else
+		status.Text = "ว่าง " .. math.floor(absSpeed) .. " กม/ชม" .. (reversing and " ↩" or " ➡")
+	end
+end)
