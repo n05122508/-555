@@ -1,0 +1,528 @@
+-- =========================================================
+-- ULTIMATE SPEED CONTROLLER + TWO-WAY TELEPORT & NUMBER COUNTING
+-- =========================================================
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local player = game.Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+-- ===== พิกัดหน้าร้านอะไหล่ =====
+local shopCFrame = CFrame.new(-7291.57275, -113.234322, 1888.16089, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+
+-- ตัวแปรเก็บพิกัดเดิมก่อนวาร์ป
+local savedPositionCFrame = nil
+
+-- ===== ตรวจสอบแมพ A-Chassis / Interface =====
+local aChassis = player.PlayerGui:FindFirstChild("A-Chassis Interface")
+local isPoliceMap = (aChassis ~= nil)
+
+player.PlayerGui.ChildAdded:Connect(function(child)
+    if child.Name == "A-Chassis Interface" then
+        aChassis = child
+        isPoliceMap = true
+    end
+end)
+
+-- ===== ตัวแปรระบบควบคุมความเร็ว =====
+_G.SpeedEnabled = false
+_G.TargetSpeed = 500
+_G.RaceMode = false
+_G.BoostMode = false
+_G.IsAutoGear = true
+_G.GearLimit = 120
+_G.SmoothMode = 1
+_G.BrakeHeld = false
+_G.AntiFlingEnabled = true
+
+local currentThrottle = 0
+
+-- ===== 1. ฟังก์ชันวาร์ปไปหน้าร้าน + บันทึกจุดเดิม =====
+local function teleportToShop()
+    pcall(function()
+        local character = player.Character
+        local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+        
+        if humanoidRootPart then
+            savedPositionCFrame = humanoidRootPart.CFrame
+            humanoidRootPart.CFrame = shopCFrame + Vector3.new(0, 3, 0)
+            task.wait(0.15)
+            
+            for _, prompt in ipairs(Workspace:GetDescendants()) do
+                if prompt:IsA("ProximityPrompt") then
+                    local part = prompt.Parent
+                    if part and part:IsA("BasePart") then
+                        if (part.Position - humanoidRootPart.Position).Magnitude < 15 then
+                            fireproximityprompt(prompt)
+                            break
+                        end
+                    end
+                end
+            end
+            
+            Rayfield:Notify({
+                Title = "วาร์ปสำเร็จ!",
+                Content = "มาถึงหน้าร้านอะไหล่แล้ว (บันทึกจุดเดิมเรียบร้อย)",
+                Duration = 2.5
+            })
+        end
+    end)
+end
+
+-- ===== 2. ฟังก์ชันวาร์ปกลับจุดเดิมที่เคยยืน =====
+local function teleportBack()
+    pcall(function()
+        local character = player.Character
+        local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+        
+        if humanoidRootPart and savedPositionCFrame then
+            humanoidRootPart.CFrame = savedPositionCFrame
+            Rayfield:Notify({
+                Title = "วาร์ปกลับสำเร็จ!",
+                Content = "กลับมายังจุดเดิมที่คุณยืนก่อนหน้านี้แล้ว",
+                Duration = 2.5
+            })
+        else
+            Rayfield:Notify({
+                Title = "ไม่พบจุดเดิม",
+                Content = "คุณยังไม่ได้กดวาร์ปไปหน้าร้านเพื่อบันทึกจุด",
+                Duration = 2.5
+            })
+        end
+    end)
+end
+
+-- ===== ฟังก์ชันเช็กจำนวนอะไหล่ในตัว =====
+local function getOwnedCount(displayName)
+    local countStr = "ไม่พบข้อมูล"
+    pcall(function()
+        local partsGui = player.PlayerGui:FindFirstChild("PartsShop", true)
+        if partsGui then
+            for _, v in ipairs(partsGui:GetDescendants()) do
+                if v:IsA("TextLabel") and string.find(v.Text, "มีในตัว") then
+                    local parentText = v.Parent and v.Parent:FindFirstChildOfClass("TextLabel") and v.Parent:FindFirstChildOfClass("TextLabel").Text or ""
+                    if string.find(parentText, displayName) or (v.Parent and string.find(v.Parent.Name, displayName)) then
+                        countStr = v.Text
+                        break
+                    end
+                end
+            end
+        end
+    end)
+    return countStr
+end
+
+-- ===== ฟังก์ชันส่งข้อความแชท =====
+local function sendChatMessage(msg)
+    pcall(function()
+        local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+        if chatEvents and chatEvents:FindFirstChild("SayMessageRequest") then
+            chatEvents.SayMessageRequest:FireServer(msg, "All")
+        else
+            local textChatService = game:GetService("TextChatService")
+            if textChatService and textChatService.TextChannels:FindFirstChild("RBXGeneral") then
+                textChatService.TextChannels.RBXGeneral:SendAsync(msg)
+            end
+        end
+    end)
+end
+
+-- ===== ฟังก์ชันดึงค่ารถ =====
+local function getValues()
+    if isPoliceMap and aChassis then
+        return aChassis:FindFirstChild("Values")
+    else
+        local interface = player.PlayerGui:FindFirstChild("Interface")
+        return interface and interface:FindFirstChild("Values")
+    end
+end
+
+local function getVehicle()
+    if isPoliceMap and aChassis then
+        local carVal = aChassis:FindFirstChild("Car")
+        if carVal and carVal.Value and carVal.Value:FindFirstChild("DriveSeat") then
+            return carVal.Value.DriveSeat
+        end
+    end
+    local char = player.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum and hum.SeatPart then return hum.SeatPart end
+    end
+    return nil
+end
+
+local function getThrottle()
+    local values = getValues()
+    if values and values:FindFirstChild("Throttle") then
+        return values.Throttle.Value
+    end
+    return 0
+end
+
+local function getBrake()
+    local values = getValues()
+    if not values then return 0 end
+    local brakeNames = {"Brake", "BrakePedal", "Braking", "HandBrake"}
+    for _, name in ipairs(brakeNames) do
+        local obj = values:FindFirstChild(name)
+        if obj then return obj.Value end
+    end
+    return 0
+end
+
+local function isReversing()
+    local rawThrottle = getThrottle()
+    if rawThrottle < -0.05 then return true end
+    local values = getValues()
+    if values and values:FindFirstChild("Gear") then
+        local g = tostring(values.Gear.Value):upper()
+        if g == "R" or g == "REVERSE" or tonumber(g) == -1 then return true end
+    end
+    return false
+end
+
+-- ===== ฟังก์ชันยิง Remote ซื้ออะไหล่ตรงรุ่น =====
+local function buyPart(partName, displayName)
+    pcall(function()
+        local args = { partName }
+        local shopRemote = ReplicatedStorage:FindFirstChild("PartsShop_Buy", true)
+        
+        if shopRemote then
+            if shopRemote:IsA("RemoteFunction") then
+                shopRemote:InvokeServer(unpack(args))
+            elseif shopRemote:IsA("RemoteEvent") then
+                shopRemote:FireServer(unpack(args))
+            end
+
+            task.wait(0.2)
+            local currentOwned = getOwnedCount(displayName)
+
+            Rayfield:Notify({
+                Title = "สั่งซื้อสำเร็จ!",
+                Content = "ซื้อ " .. (displayName or partName) .. " แล้ว (" .. currentOwned .. ")",
+                Duration = 2.5
+            })
+        else
+            Rayfield:Notify({
+                Title = "ไม่พบ Remote",
+                Content = "หา PartsShop_Buy ใน ReplicatedStorage ไม่พบ",
+                Duration = 3
+            })
+        end
+    end)
+end
+
+-- ===== สร้างหน้าต่าง Rayfield UI =====
+local Window = Rayfield:CreateWindow({
+   Name = "⚡ ULTIMATE SPEED & PARTS SHOP",
+   LoadingTitle = "กำลังโหลดระบบความเร็วและร้านค้า...",
+   LoadingSubtitle = "Mobile Friendly Setup",
+   ConfigurationSaving = { Enabled = false }
+})
+
+-- TAB 1: ความเร็ว (Speed)
+local MainTab = Window:CreateTab("ความเร็ว (Speed)", 4483362458)
+MainTab:CreateSection("ระบบหลัก (Main Controls)")
+
+MainTab:CreateToggle({
+   Name = "เปิดระบบควบคุมความเร็ว (Speed Script)",
+   CurrentValue = false,
+   Callback = function(Value) _G.SpeedEnabled = Value end,
+})
+
+MainTab:CreateInput({
+   Name = "ความเร็วสูงสุด (Speed Limit)",
+   PlaceholderText = "ใส่ความเร็ว (เช่น 500)",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+       local num = tonumber(Text)
+       if num then _G.TargetSpeed = math.clamp(num, 0, 2000) end
+   end,
+})
+
+MainTab:CreateDropdown({
+   Name = "ตอบสนองคันเร่ง (เนียนธรรมชาติ)",
+   Options = {"🟢 นุ่มนวลเนียนสุดๆ (Soft)", "🔵 ปกติธรรมชาติ (Smooth)", "🔥 ดุดัน (Aggressive)"},
+   CurrentOption = "🟢 นุ่มนวลเนียนสุดๆ (Soft)",
+   Callback = function(Option)
+       currentThrottle = 0 
+       if Option == "🟢 นุ่มนวลเนียนสุดๆ (Soft)" then 
+           _G.SmoothMode = 1
+       elseif Option == "🔵 ปกติธรรมชาติ (Smooth)" then 
+           _G.SmoothMode = 2
+       else 
+           _G.SmoothMode = 3 
+       end
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "โหมดแข่ง (Race Mode)",
+   CurrentValue = false,
+   Callback = function(Value) _G.RaceMode = Value end,
+})
+
+MainTab:CreateToggle({
+   Name = "โหมดบูสต์ (Boost Acceleration)",
+   CurrentValue = false,
+   Callback = function(Value) _G.BoostMode = Value end,
+})
+
+-- TAB 2: ร้านค้าอะไหล่ (Parts Shop & Two-Way Teleport)
+local ShopTab = Window:CreateTab("🛒 ร้านค้าอะไหล่", 4483362458)
+
+ShopTab:CreateSection("ระบบวาร์ปไปร้าน & กลับจุดเดิม")
+
+ShopTab:CreateButton({
+   Name = "📍 วาร์ปไปหน้าร้านอะไหล่ (Teleport to Shop)",
+   Callback = function()
+       teleportToShop()
+   end,
+})
+
+ShopTab:CreateButton({
+   Name = "🔙 วาร์ปกลับจุดเดิม (Teleport Back)",
+   Callback = function()
+       teleportBack()
+   end,
+})
+
+ShopTab:CreateSection("ซื้อยกชุดทำเครื่องยนต์")
+
+ShopTab:CreateButton({
+   Name = "📦 ซื้ออะไหล่ครบชุดทำเครื่อง (Buy All Engine Parts)",
+   Callback = function()
+       local partsList = {
+           {name = "Block", label = "เสื้อสูบ"},
+           {name = "Piston", label = "ลูกสูบ"},
+           {name = "Head", label = "ฝาสูบ"},
+           {name = "ConnectingRod", label = "ก้านสูบ"},
+           {name = "Crankshaft", label = "ข้อเหวี่ยง"},
+           {name = "Valve", label = "วาล์ว"},
+           {name = "SparkPlug", label = "หัวเทียน"},
+           {name = "Oil", label = "น้ำมันเครื่อง"}
+       }
+       for _, item in ipairs(partsList) do
+           buyPart(item.name, item.label)
+           task.wait(0.2)
+       end
+   end,
+})
+
+ShopTab:CreateSection("สั่งซื้ออะไหล่แยกชิ้น")
+
+ShopTab:CreateButton({ Name = "⚙️ ซื้อ ลูกสูบ (Piston - $1,800)", Callback = function() buyPart("Piston", "ลูกสูบ") end })
+ShopTab:CreateButton({ Name = "🧱 ซื้อ เสื้อสูบ (Cylinder Block - $2,000)", Callback = function() buyPart("Block", "เสื้อสูบ") end })
+ShopTab:CreateButton({ Name = "🔩 ซื้อ ฝาสูบ (Cylinder Head - $4,500)", Callback = function() buyPart("Head", "ฝาสูบ") end })
+ShopTab:CreateButton({ Name = "🔗 ซื้อ ก้านสูบ (Connecting Rod - $2,000)", Callback = function() buyPart("ConnectingRod", "ก้านสูบ") end })
+ShopTab:CreateButton({ Name = "🔄 ซื้อ ข้อเหวี่ยง (Crankshaft - $5,000)", Callback = function() buyPart("Crankshaft", "ข้อเหวี่ยง") end })
+ShopTab:CreateButton({ Name = "⚡ ซื้อ วาล์ว (Valve - $1,200)", Callback = function() buyPart("Valve", "วาล์ว") end })
+ShopTab:CreateButton({ Name = "💥 ซื้อ หัวเทียน (Spark Plug - $380)", Callback = function() buyPart("SparkPlug", "หัวเทียน") end })
+ShopTab:CreateButton({ Name = "🛢️ ซื้อ น้ำมันเครื่อง (Engine Oil - $475)", Callback = function() buyPart("Oil", "น้ำมันเครื่อง") end })
+
+-- TAB 3: คลังอะไหล่ในตัว (Inventory Tracker)
+local InvTab = Window:CreateTab("🎒 คลังอะไหล่", 4483362458)
+
+InvTab:CreateSection("ตรวจสอบจำนวนอะไหล่ที่มีในตัวล่าสุด")
+
+local pistonLabel = InvTab:CreateLabel("⚙️ ลูกสูบ: ดึงข้อมูล...")
+local blockLabel = InvTab:CreateLabel("🧱 เสื้อสูบ: ดึงข้อมูล...")
+local headLabel = InvTab:CreateLabel("🔩 ฝาสูบ: ดึงข้อมูล...")
+local rodLabel = InvTab:CreateLabel("🔗 ก้านสูบ: ดึงข้อมูล...")
+local crankLabel = InvTab:CreateLabel("🔄 ข้อเหวี่ยง: ดึงข้อมูล...")
+local valveLabel = InvTab:CreateLabel("⚡ วาล์ว: ดึงข้อมูล...")
+local sparkLabel = InvTab:CreateLabel("💥 หัวเทียน: ดึงข้อมูล...")
+local oilLabel = InvTab:CreateLabel("🛢️ น้ำมันเครื่อง: ดึงข้อมูล...")
+
+local function refreshInventoryUI()
+    pistonLabel:Set("⚙️ ลูกสูบ: " .. getOwnedCount("ลูกสูบ"))
+    blockLabel:Set("🧱 เสื้อสูบ: " .. getOwnedCount("เสื้อสูบ"))
+    headLabel:Set("🔩 ฝาสูบ: " .. getOwnedCount("ฝาสูบ"))
+    rodLabel:Set("🔗 ก้านสูบ: " .. getOwnedCount("ก้านสูบ"))
+    crankLabel:Set("🔄 ข้อเหวี่ยง: " .. getOwnedCount("ข้อเหวี่ยง"))
+    valveLabel:Set("⚡ วาล์ว: " .. getOwnedCount("วาล์ว"))
+    sparkLabel:Set("💥 หัวเทียน: " .. getOwnedCount("หัวเทียน"))
+    oilLabel:Set("🛢️ น้ำมันเครื่อง: " .. getOwnedCount("น้ำมันเครื่อง"))
+end
+
+InvTab:CreateButton({
+   Name = "🔄 อัปเดตเช็กจำนวนของในตัว",
+   Callback = function()
+       refreshInventoryUI()
+       Rayfield:Notify({ Title = "อัปเดตข้อมูลแล้ว", Content = "ดึงข้อมูลจำนวนของในตัวล่าสุดเรียบร้อย", Duration = 2 })
+   end,
+})
+
+-- TAB 4: เกียร์ & ความปลอดภัย (Gear & Safety)
+local GearTab = Window:CreateTab("เกียร์ & ความปลอดภัย", 4483362458)
+GearTab:CreateSection("การตั้งค่าเกียร์")
+
+GearTab:CreateToggle({
+   Name = "โหมดเกียร์ออโต้ (Auto Gear)",
+   CurrentValue = true,
+   Callback = function(Value) _G.IsAutoGear = Value end,
+})
+
+GearTab:CreateInput({
+   Name = "ความเร็วลิมิตเกียร์ (Gear Limit)",
+   PlaceholderText = "ใส่ความเร็วเกียร์ (เช่น 120)",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+       local num = tonumber(Text)
+       if num then _G.GearLimit = num end
+   end,
+})
+
+GearTab:CreateSection("ความปลอดภัย")
+GearTab:CreateToggle({
+   Name = "กันรถบิน / ตีลังกา (Anti-Fling)",
+   CurrentValue = true,
+   Callback = function(Value) _G.AntiFlingEnabled = Value end,
+})
+
+-- TAB 5: ปุ่มช่วยเหลือ & คำสั่งแชท (Utility)
+local UtilTab = Window:CreateTab("ช่วยเหลือ (Utility)", 4483362458)
+
+UtilTab:CreateSection("คำสั่งแชทแข่งรถ (Chat Commands)")
+
+UtilTab:CreateButton({
+   Name = "🔢 ส่งคำสั่งนับเลข (เช่น 3 2 1 GO)",
+   Callback = function()
+       task.spawn(function()
+           sendChatMessage("3")
+           task.wait(1)
+           sendChatMessage("2")
+           task.wait(1)
+           sendChatMessage("1")
+           task.wait(1)
+           sendChatMessage("GO! 🚀")
+       end)
+       Rayfield:Notify({ Title = "เริ่มนับเลข!", Content = "กำลังส่งข้อความนับเลขลงในแชท", Duration = 2 })
+   end,
+})
+
+UtilTab:CreateButton({
+   Name = "🏁 ส่งคำสั่ง !START",
+   Callback = function()
+       sendChatMessage("!START")
+       Rayfield:Notify({ Title = "ส่งคำสั่งสำเร็จ!", Content = "พิมพ์ '!START' ลงในแชทเรียบร้อยแล้ว", Duration = 2 })
+   end,
+})
+
+UtilTab:CreateSection("การตั้งค่าพาหนะ")
+
+UtilTab:CreateButton({
+   Name = "🔄 พลิกรถตั้งตรง (Auto-Flip)",
+   Callback = function()
+       local seat = getVehicle()
+       if seat and seat.Parent then
+           local carModel = seat.Parent
+           local primary = carModel.PrimaryPart or seat
+           if primary then
+               primary.CFrame = CFrame.new(primary.Position + Vector3.new(0, 3, 0)) * CFrame.Angles(0, math.rad(primary.Orientation.Y), 0)
+               Rayfield:Notify({ Title = "เรียบร้อย!", Content = "พลิกรถกลับมาตั้งตรงแล้ว", Duration = 2 })
+           end
+       end
+   end,
+})
+
+UtilTab:CreateButton({
+   Name = "❌ ปิดสคริปต์ (Destroy UI)",
+   Callback = function()
+       _G.SpeedEnabled = false
+       Rayfield:Destroy()
+   end,
+})
+
+-- ===== ลูปหลักควบคุมความเร็วรถ =====
+RunService.RenderStepped:Connect(function(dt)
+    if not _G.SpeedEnabled then
+        currentThrottle = 0
+        return
+    end
+
+    local seat = getVehicle()
+    if not seat then
+        currentThrottle = 0
+        return
+    end
+
+    local vel = seat.AssemblyLinearVelocity
+    local dir = seat.CFrame.LookVector
+    local currentSpeed = vel:Dot(dir)
+    local absSpeed = math.abs(currentSpeed)
+
+    if _G.AntiFlingEnabled and math.abs(vel.Y) > 25 then
+        seat.AssemblyLinearVelocity = Vector3.new(vel.X, math.clamp(vel.Y, -15, 15), vel.Z)
+    end
+
+    local rawThrottle = getThrottle()
+    if math.abs(rawThrottle) < 0.08 then
+        currentThrottle = 0
+        return
+    end
+
+    local reversing = isReversing()
+    local moveDir = reversing and -dir or dir
+
+    local target = 0
+    if reversing then
+        target = 50
+    else
+        if _G.IsAutoGear then
+            target = _G.TargetSpeed
+        else
+            target = _G.GearLimit or _G.TargetSpeed
+        end
+    end
+    if target > 2000 then target = 2000 end
+
+    local launchFactor = 1.0
+    if absSpeed < 40 then
+        launchFactor = 0.25
+    elseif absSpeed < 80 then
+        launchFactor = 0.6
+    end
+
+    local rampFactor, responseMultiplier, maxAddLimit
+    if _G.SmoothMode == 1 then
+        rampFactor = 0.008; responseMultiplier = 0.012; maxAddLimit = 0.4
+    elseif _G.SmoothMode == 2 then
+        rampFactor = 0.03; responseMultiplier = 0.04; maxAddLimit = 1.0
+    else
+        rampFactor = 0.2; responseMultiplier = 0.3; maxAddLimit = 5.0
+    end
+
+    local baseResponse = (_G.RaceMode and (responseMultiplier * 1.5) or responseMultiplier) * launchFactor
+    local maxAdd = (_G.RaceMode and (maxAddLimit * 1.5) or maxAddLimit) * launchFactor
+
+    if _G.BoostMode then
+        baseResponse = baseResponse * 3.0
+        maxAdd = maxAdd * 2.5
+    end
+
+    if reversing then
+        baseResponse = baseResponse * 0.2
+        maxAdd = maxAdd * 0.25
+    end
+
+    currentThrottle = math.min(math.abs(rawThrottle), currentThrottle + rampFactor)
+
+    local isBraking = (getBrake() > 0.05) or _G.BrakeHeld
+    if isBraking and absSpeed > 0.5 then
+        local decel = 45 * dt
+        local newSpeed = math.max(0, absSpeed - decel)
+        seat.AssemblyLinearVelocity = (dir * (currentSpeed >= 0 and newSpeed or -newSpeed))
+    elseif currentThrottle > 0.08 then
+        if absSpeed < target then
+            local add = math.min((target - absSpeed) * baseResponse * currentThrottle, maxAdd)
+            seat.AssemblyLinearVelocity = vel + moveDir * add
+        end
+    end
+end)
+
+print("Number Counting Script Updated Successfully!")
